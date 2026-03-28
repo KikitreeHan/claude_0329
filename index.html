@@ -87,16 +87,25 @@ const Fld=({label,children})=>(
   <div><p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">{label}</p>{children}</div>
 );
 
-// Korean IME-safe input: local display state during composition
+// ── Korean IME-safe inputs ────────────────────────────────────────
+// Root cause: React's `value` prop overwrites the DOM on every render,
+// which destroys the browser's IME composition state mid-typing.
+// Fix: use `defaultValue` (uncontrolled) so React never touches the DOM value.
+// Parent value changes are applied imperatively via ref, only when not composing.
+
 const Inp=({value='',onChange,...props})=>{
+  const ref=useRef(null);
   const composing=useRef(false);
-  const [display,setDisplay]=useState(value??'');
-  useEffect(()=>{ if(!composing.current) setDisplay(value??''); },[value]);
+  // Sync parent-driven value changes to DOM (e.g. modal opens with edit data)
+  useEffect(()=>{
+    if(ref.current&&!composing.current&&ref.current.value!==(value??''))
+      ref.current.value=value??'';
+  },[value]);
   return(
-    <input {...props} value={display}
-      onChange={e=>{ setDisplay(e.target.value); if(!composing.current) onChange?.(e); }}
+    <input {...props} ref={ref} defaultValue={value}
+      onChange={e=>{ if(!composing.current) onChange?.(e); }}
       onCompositionStart={()=>{ composing.current=true; }}
-      onCompositionEnd={e=>{ composing.current=false; setDisplay(e.target.value); onChange?.(e); }}
+      onCompositionEnd={e=>{ composing.current=false; onChange?.(e); }}
       className={`w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-sm text-slate-900 placeholder:text-slate-400 transition-all ${props.className||''}`}
     />
   );
@@ -106,16 +115,18 @@ const Sel=(props)=>(
   <select {...props} className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-sm text-slate-900 transition-all"/>
 );
 
-// Korean IME-safe textarea
 const Txta=({value='',onChange,...props})=>{
+  const ref=useRef(null);
   const composing=useRef(false);
-  const [display,setDisplay]=useState(value??'');
-  useEffect(()=>{ if(!composing.current) setDisplay(value??''); },[value]);
+  useEffect(()=>{
+    if(ref.current&&!composing.current&&ref.current.value!==(value??''))
+      ref.current.value=value??'';
+  },[value]);
   return(
-    <textarea {...props} value={display}
-      onChange={e=>{ setDisplay(e.target.value); if(!composing.current) onChange?.(e); }}
+    <textarea {...props} ref={ref} defaultValue={value}
+      onChange={e=>{ if(!composing.current) onChange?.(e); }}
       onCompositionStart={()=>{ composing.current=true; }}
-      onCompositionEnd={e=>{ composing.current=false; setDisplay(e.target.value); onChange?.(e); }}
+      onCompositionEnd={e=>{ composing.current=false; onChange?.(e); }}
       className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-sm text-slate-900 resize-none transition-all"
     />
   );
@@ -890,10 +901,10 @@ function MainApp(){
                 ))}
               </div>
               <div className="px-4 py-3 border-t border-slate-100 flex items-end gap-2 flex-shrink-0">
-                <input value={input} onChange={e=>setInput(e.target.value)}
+                <Inp value={input} onChange={e=>setInput(e.target.value)}
                   onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&send()}
                   placeholder="메시지를 입력하세요..."
-                  className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all bg-slate-50"/>
+                  className="flex-1 w-auto"/>
                 <button onClick={()=>send()} disabled={!input.trim()}
                   className="w-10 h-10 bg-indigo-600 disabled:bg-slate-200 text-white rounded-xl flex items-center justify-center transition-all hover:bg-indigo-700 active:scale-95">
                   <Icon name="send" size={15}/>
