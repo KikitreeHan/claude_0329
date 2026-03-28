@@ -1,0 +1,1300 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TutorMate Pro</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://unpkg.com/dayjs@1.11.10/dayjs.min.js"></script>
+  <script src="https://unpkg.com/dayjs@1.11.10/locale/ko.js"></script>
+  <script src="https://unpkg.com/dayjs@1.11.10/plugin/isToday.js"></script>
+  <script src="https://unpkg.com/dayjs@1.11.10/plugin/isSameOrBefore.js"></script>
+  <script src="https://unpkg.com/dayjs@1.11.10/plugin/isSameOrAfter.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    * { box-sizing: border-box; }
+    body { font-family: 'Inter', -apple-system, sans-serif; }
+    .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 2px; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 antialiased">
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useMemo } = React;
+
+// ── Day.js setup ─────────────────────────────────────────────────
+dayjs.locale('ko');
+dayjs.extend(window.dayjs_plugin_isToday);
+dayjs.extend(window.dayjs_plugin_isSameOrBefore);
+dayjs.extend(window.dayjs_plugin_isSameOrAfter);
+
+// ── LocalStorage helpers ──────────────────────────────────────────
+const ls = {
+  get: (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
+  set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+
+// ── Color palettes (fully written Tailwind classes) ───────────────
+const SCOLORS = [
+  { bg:'bg-blue-100',   border:'border-blue-200',   text:'text-blue-700',   solid:'bg-blue-500'   },
+  { bg:'bg-emerald-100',border:'border-emerald-200', text:'text-emerald-700',solid:'bg-emerald-500' },
+  { bg:'bg-violet-100', border:'border-violet-200',  text:'text-violet-700', solid:'bg-violet-500'  },
+  { bg:'bg-amber-100',  border:'border-amber-200',   text:'text-amber-700',  solid:'bg-amber-500'   },
+  { bg:'bg-rose-100',   border:'border-rose-200',    text:'text-rose-700',   solid:'bg-rose-500'    },
+  { bg:'bg-cyan-100',   border:'border-cyan-200',    text:'text-cyan-700',   solid:'bg-cyan-500'    },
+];
+const CLASS_SOLID = ['bg-indigo-500','bg-emerald-500','bg-amber-500','bg-rose-500','bg-violet-500','bg-cyan-500'];
+const T_EMOJIS = ['👩‍🏫','👨‍🏫','🧑‍🏫','👩‍💼','👨‍💼','🎓'];
+const STATUS_CFG = {
+  '미시작': { bg:'bg-slate-100',   text:'text-slate-500'   },
+  '진행중': { bg:'bg-amber-100',   text:'text-amber-700'   },
+  '완료':   { bg:'bg-emerald-100', text:'text-emerald-700' },
+};
+const QUICK_MSGS = [
+  '오늘 수업 잘 마쳤습니다 😊',
+  '숙제 확인 부탁드립니다!',
+  '다음 수업은 정상 진행됩니다',
+  '수업 일정 변경이 필요합니다',
+  '오늘 수업 결석 처리되었습니다',
+  '수업료 정산 부탁드립니다',
+];
+
+// ── Tiny Components ───────────────────────────────────────────────
+const Icon = ({ name, size = 18, className = '' }) => {
+  useEffect(() => { try { lucide.createIcons(); } catch {} }, [name]);
+  return <i data-lucide={name} style={{ width: size, height: size }} className={`flex-shrink-0 ${className}`} />;
+};
+
+const Av = ({ name, col, sz = 'md' }) => {
+  const s = { sm:'w-8 h-8 text-sm', md:'w-10 h-10 text-base', lg:'w-12 h-12 text-lg' }[sz];
+  return <div className={`${s} rounded-2xl ${col?.bg||'bg-slate-100'} ${col?.text||'text-slate-600'} flex items-center justify-center font-bold flex-shrink-0`}>{name?.[0]||'?'}</div>;
+};
+
+const Modal = ({ open, onClose, title, children, footer, wide }) => {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/50 backdrop-blur-sm"
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className={`bg-white rounded-t-3xl sm:rounded-3xl w-full ${wide ? 'max-w-lg' : 'max-w-md'} max-h-[90vh] flex flex-col shadow-2xl`}>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 flex-shrink-0">
+          <h3 className="text-lg font-bold">{title}</h3>
+          <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-slate-100 text-slate-400 transition-colors"><Icon name="x" size={15}/></button>
+        </div>
+        <div className="overflow-y-auto p-6 flex-1 space-y-4">{children}</div>
+        {footer && <div className="px-6 py-4 border-t border-slate-100 flex-shrink-0">{footer}</div>}
+      </div>
+    </div>
+  );
+};
+
+const Fld = ({ label, children }) => (
+  <div><p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">{label}</p>{children}</div>
+);
+const Inp = (props) => <input {...props} className={`w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-sm text-slate-900 placeholder:text-slate-400 transition-all ${props.className||''}`}/>;
+const Sel = (props) => <select {...props} className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-sm text-slate-900 transition-all"/>;
+const Txta = (props) => <textarea {...props} className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-sm text-slate-900 resize-none transition-all"/>;
+const PriBtn = ({ children, disabled, className='', ...p }) => (
+  <button {...p} disabled={disabled} className={`bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl font-semibold text-sm flex items-center gap-2 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed ${className}`}>{children}</button>
+);
+
+// ── Share View (public URL) ───────────────────────────────────────
+// data = { s: {name,subject,colorIdx}, h: [{id,task,completed,dueDate},...], t: teacherName }
+function ShareView({ data }) {
+  if (!data) return (
+    <div className="min-h-screen flex items-center justify-center text-slate-400">
+      <div className="text-center"><p className="text-5xl mb-4">😕</p><p className="font-semibold">링크가 올바르지 않습니다</p><p className="text-sm mt-2">공유 링크를 다시 확인해 주세요</p></div>
+    </div>
+  );
+  const { s: student, h: hws, t: teacherName } = data;
+  const col = SCOLORS[student.colorIdx||0];
+  const done = hws.filter(h=>h.completed).length;
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-slate-100 p-6 flex items-start justify-center pt-16">
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-8">
+          <div className="text-5xl mb-3">📝</div>
+          <h1 className="text-2xl font-bold">{student.name} 학생 숙제</h1>
+          <p className="text-slate-500 text-sm mt-1">{teacherName} 선생님 · {student.subject}</p>
+        </div>
+        <div className="bg-white rounded-3xl shadow-sm p-6 mb-6">
+          <div className="flex justify-between text-sm font-semibold mb-2">
+            <span className="text-slate-600">{done}/{hws.length} 완료</span>
+            <span className="text-indigo-600 font-bold">{hws.length ? Math.round(done/hws.length*100) : 0}%</span>
+          </div>
+          <div className="h-2 bg-slate-100 rounded-full overflow-hidden mb-6">
+            <div className="h-full bg-indigo-500 rounded-full" style={{width:`${hws.length?done/hws.length*100:0}%`}}/>
+          </div>
+          {hws.length === 0 ? <p className="text-center text-slate-400 py-6">숙제가 없어요 🎉</p>
+           : hws.map(hw => (
+            <div key={hw.id} className={`flex items-start gap-3 p-3 rounded-xl mb-2 last:mb-0 ${hw.completed?'bg-emerald-50':'bg-slate-50'}`}>
+              <div className={`w-5 h-5 rounded-full border-2 mt-0.5 flex items-center justify-center flex-shrink-0 ${hw.completed?'bg-emerald-500 border-emerald-500':'border-slate-300'}`}>
+                {hw.completed && <Icon name="check" size={11} className="text-white"/>}
+              </div>
+              <span className={`text-sm font-medium ${hw.completed?'line-through text-slate-400':'text-slate-700'}`}>{hw.task}</span>
+            </div>
+          ))}
+        </div>
+        <p className="text-center text-xs text-slate-400">TutorMate Pro · {dayjs().format('YYYY년 MM월 DD일')}</p>
+      </div>
+    </div>
+  );
+}
+
+// ── Main App ──────────────────────────────────────────────────────
+function App() {
+  // Decode base64-encoded share payload from URL hash → works on any device
+  const shareData = useMemo(()=>{
+    const m = window.location.hash.match(/#share\/(.+)/);
+    if (!m) return null;
+    try { return JSON.parse(decodeURIComponent(atob(m[1]))); } catch { return null; }
+  },[]);
+  if (shareData) return <ShareView data={shareData}/>;
+  return <MainApp/>;
+}
+
+function MainApp() {
+  const defaultTeacher = { id:'t1', name:'선생님', emoji:'👩‍🏫' };
+
+  // ── Teacher state ─────────────────────────────────────────────
+  const [teachers, setTeachers] = useState(()=>ls.get('tm_teachers',[defaultTeacher]));
+  const [tid, setTid] = useState(()=>ls.get('tm_current_teacher','t1'));
+
+  // ── Per-teacher state ─────────────────────────────────────────
+  const [students, setStudents] = useState(()=>ls.get(`tm_${tid}_students`,[]));
+  const [classes, setClasses] = useState(()=>ls.get(`tm_${tid}_classes`,[]));
+  const [lessons, setLessons] = useState(()=>ls.get(`tm_${tid}_lessons`,[]));
+  const [homeworks, setHomeworks] = useState(()=>ls.get(`tm_${tid}_homeworks`,[]));
+  const [progress, setProgress] = useState(()=>ls.get(`tm_${tid}_progress`,[]));
+  const [messages, setMessages] = useState(()=>ls.get(`tm_${tid}_messages`,{}));
+
+  // ── UI state ──────────────────────────────────────────────────
+  const [tab, setTab] = useState('dashboard');
+  const [month, setMonth] = useState(dayjs());
+  const [selDate, setSelDate] = useState(dayjs());
+  const [msgSid, setMsgSid] = useState(null);
+  const [tMenu, setTMenu] = useState(false);
+  const tMenuRef = useRef(null);
+  const [toast, setToast] = useState(null); // { msg, type }
+  const toastRef = useRef(null);
+
+  const showToast = (msg, type='success') => {
+    setToast({ msg, type });
+    clearTimeout(toastRef.current);
+    toastRef.current = setTimeout(() => setToast(null), 2200);
+  };
+
+  const saveAll = () => {
+    ls.set('tm_teachers', teachers);
+    ls.set('tm_current_teacher', tid);
+    ls.set(`tm_${tid}_students`, students);
+    ls.set(`tm_${tid}_classes`, classes);
+    ls.set(`tm_${tid}_lessons`, lessons);
+    ls.set(`tm_${tid}_homeworks`, homeworks);
+    ls.set(`tm_${tid}_progress`, progress);
+    ls.set(`tm_${tid}_messages`, messages);
+    showToast('저장 완료!');
+  };
+
+  // ── Modal state ───────────────────────────────────────────────
+  const [modal, setModal] = useState(null);
+  const [editTarget, setEditTarget] = useState(null);
+  const [f, setF] = useState({}); // form fields
+  const upd = patch => setF(prev => ({...prev,...patch}));
+
+  // Switch teacher → reload data
+  useEffect(()=>{
+    setStudents(ls.get(`tm_${tid}_students`,[]));
+    setClasses(ls.get(`tm_${tid}_classes`,[]));
+    setLessons(ls.get(`tm_${tid}_lessons`,[]));
+    setHomeworks(ls.get(`tm_${tid}_homeworks`,[]));
+    setProgress(ls.get(`tm_${tid}_progress`,[]));
+    setMessages(ls.get(`tm_${tid}_messages`,{}));
+    setMsgSid(null);
+  },[tid]);
+
+  // Persist on change
+  useEffect(()=>ls.set('tm_teachers',teachers),[teachers]);
+  useEffect(()=>ls.set('tm_current_teacher',tid),[tid]);
+  useEffect(()=>ls.set(`tm_${tid}_students`,students),[students,tid]);
+  useEffect(()=>ls.set(`tm_${tid}_classes`,classes),[classes,tid]);
+  useEffect(()=>ls.set(`tm_${tid}_lessons`,lessons),[lessons,tid]);
+  useEffect(()=>ls.set(`tm_${tid}_homeworks`,homeworks),[homeworks,tid]);
+  useEffect(()=>ls.set(`tm_${tid}_progress`,progress),[progress,tid]);
+  useEffect(()=>ls.set(`tm_${tid}_messages`,messages),[messages,tid]);
+
+  // Close teacher menu on outside click
+  useEffect(()=>{
+    if (!tMenu) return;
+    const h = e => { if (!tMenuRef.current?.contains(e.target)) setTMenu(false); };
+    document.addEventListener('mousedown', h);
+    return ()=>document.removeEventListener('mousedown', h);
+  },[tMenu]);
+
+  // ── Helpers ───────────────────────────────────────────────────
+  const curTeacher = teachers.find(t=>t.id===tid)||defaultTeacher;
+  const getSt = id => students.find(s=>s.id===id);
+  const getCl = id => classes.find(c=>c.id===id);
+  const col = st => SCOLORS[st?.colorIdx||0];
+  const lessonsOn = d => lessons.filter(l=>l.date===d.format('YYYY-MM-DD'));
+  // Encode student + homeworks into URL so link works on any device/browser
+  const shareLink = sid => {
+    const st = getSt(sid);
+    if (!st) return '';
+    const payload = { s:{name:st.name,subject:st.subject,colorIdx:st.colorIdx}, h:homeworks.filter(h=>h.studentId===sid), t:curTeacher.name };
+    return `${window.location.href.split('#')[0]}#share/${btoa(encodeURIComponent(JSON.stringify(payload)))}`;
+  };
+
+  const openModal = (name, target=null, init={}) => { setModal(name); setEditTarget(target); setF(init); };
+  const closeModal = () => { setModal(null); setEditTarget(null); setF({}); };
+
+  // ── Teachers ──────────────────────────────────────────────────
+  const addTeacher = () => {
+    if (!f.name?.trim()) return;
+    const t = { id:`t${Date.now()}`, name:f.name.trim(), emoji:f.emoji||'👩‍🏫' };
+    const updated = [...teachers, t];
+    setTeachers(updated);
+    setTid(t.id);
+    closeModal();
+  };
+  const delTeacher = id => {
+    if (teachers.length===1) return alert('마지막 프로필은 삭제할 수 없습니다.');
+    if (!confirm('이 프로필을 삭제하시겠습니까?')) return;
+    const updated = teachers.filter(t=>t.id!==id);
+    setTeachers(updated);
+    if (tid===id) setTid(updated[0].id);
+  };
+
+  // ── Students ──────────────────────────────────────────────────
+  const addStudent = () => {
+    if (!f.name?.trim()||!f.subject?.trim()) return;
+    const s = { id:`s${Date.now()}`, name:f.name.trim(), subject:f.subject.trim(), classId:f.classId||null, colorIdx:students.length%SCOLORS.length };
+    setStudents(p=>[...p,s]);
+    closeModal();
+  };
+  const editStudent = () => {
+    if (!f.name?.trim()||!f.subject?.trim()) return;
+    setStudents(p=>p.map(s=>s.id===editTarget.id?{...s,name:f.name.trim(),subject:f.subject.trim(),classId:f.classId||null}:s));
+    closeModal();
+  };
+  const delStudent = id => {
+    if (!confirm('학생을 삭제하시겠습니까?')) return;
+    setStudents(p=>p.filter(s=>s.id!==id));
+    setLessons(p=>p.filter(l=>l.studentId!==id));
+    setHomeworks(p=>p.filter(h=>h.studentId!==id));
+    setProgress(p=>p.filter(x=>x.studentId!==id));
+    setMessages(p=>{ const n={...p}; delete n[id]; return n; });
+  };
+
+  // ── Classes ───────────────────────────────────────────────────
+  const addClass = () => {
+    if (!f.name?.trim()) return;
+    const c = { id:`c${Date.now()}`, name:f.name.trim(), colorIdx:classes.length%CLASS_SOLID.length };
+    setClasses(p=>[...p,c]);
+    closeModal();
+  };
+  const delClass = id => {
+    if (!confirm('클래스를 삭제하시겠습니까?')) return;
+    setClasses(p=>p.filter(c=>c.id!==id));
+    setStudents(p=>p.map(s=>s.classId===id?{...s,classId:null}:s));
+  };
+
+  // ── Lessons ───────────────────────────────────────────────────
+  const addLesson = () => {
+    if (!f.studentId) return alert('학생을 선택해주세요.');
+    const prev = lessons.filter(l=>l.studentId===f.studentId);
+    const l = { id:`l${Date.now()}`, studentId:f.studentId, date:f.date||selDate.format('YYYY-MM-DD'),
+      time:f.time||'16:00 - 17:30', sessionCount:Number(f.sessionCount)||prev.length+1, memo:f.memo||'', status:'scheduled' };
+    setLessons(p=>[...p,l]);
+    closeModal();
+  };
+  const editLesson = () => {
+    setLessons(p=>p.map(l=>l.id===editTarget.id?{...l,...f,sessionCount:Number(f.sessionCount)||l.sessionCount}:l));
+    closeModal();
+  };
+  const doneLesson = id => setLessons(p=>p.map(l=>l.id===id?{...l,status:'completed'}:l));
+  const delLesson = id => { if (confirm('수업을 삭제하시겠습니까?')) setLessons(p=>p.filter(l=>l.id!==id)); };
+
+  // ── Homework ──────────────────────────────────────────────────
+  const addHomework = () => {
+    if (!f.studentId||!f.task?.trim()) return;
+    const h = { id:`h${Date.now()}`, studentId:f.studentId, task:f.task.trim(), completed:false, dueDate:f.dueDate||dayjs().format('YYYY-MM-DD') };
+    setHomeworks(p=>[...p,h]);
+    closeModal();
+  };
+  const toggleHW = id => setHomeworks(p=>p.map(h=>h.id===id?{...h,completed:!h.completed}:h));
+  const delHW = id => setHomeworks(p=>p.filter(h=>h.id!==id));
+
+  // ── Progress ──────────────────────────────────────────────────
+  const addProgress = () => {
+    if (!f.studentId||!f.unit?.trim()) return;
+    const p = { id:`p${Date.now()}`, studentId:f.studentId, unit:f.unit.trim(), status:f.status||'미시작', memo:f.memo||'' };
+    setProgress(prev=>[...prev,p]);
+    closeModal();
+  };
+  const setProgStatus = (id,status) => setProgress(p=>p.map(x=>x.id===id?{...x,status}:x));
+  const delProgress = id => { if (confirm('삭제하시겠습니까?')) setProgress(p=>p.filter(x=>x.id!==id)); };
+
+  // ── Messages ──────────────────────────────────────────────────
+  const sendMsg = (sid, text) => {
+    if (!text.trim()) return;
+    const now = dayjs();
+    const m = { id:`m${Date.now()}`, text:text.trim(), from:'tutor', time:now.format('HH:mm'), date:now.format('YYYY-MM-DD') };
+    setMessages(prev=>({...prev,[sid]:[...(prev[sid]||[]),m]}));
+  };
+  const delMsg = (sid,mid) => setMessages(prev=>({...prev,[sid]:(prev[sid]||[]).filter(m=>m.id!==mid)}));
+
+  // ── NAV TABS ──────────────────────────────────────────────────
+  const TABS = [
+    {id:'dashboard',icon:'layout-dashboard',label:'대시보드'},
+    {id:'calendar',  icon:'calendar',        label:'캘린더'},
+    {id:'students',  icon:'users',           label:'학생/클래스'},
+    {id:'homework',  icon:'check-square',    label:'숙제'},
+    {id:'progress',  icon:'bar-chart-2',     label:'진도표'},
+    {id:'messages',  icon:'message-circle',  label:'메시지'},
+  ];
+
+  // ═════════════════════════════════════════════════════════════
+  // HEADER
+  // ═════════════════════════════════════════════════════════════
+  const Header = () => (
+    <header className="bg-white border-b border-slate-200 sticky top-0 z-30">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
+        {/* Logo */}
+        <div className="flex items-center gap-2.5 flex-shrink-0">
+          <div className="w-9 h-9 bg-indigo-600 rounded-xl flex items-center justify-center shadow-sm">
+            <Icon name="book-open" size={17} className="text-white"/>
+          </div>
+          <div className="hidden sm:block">
+            <p className="text-base font-bold leading-none">TutorMate</p>
+            <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider leading-none mt-0.5">Pro</p>
+          </div>
+        </div>
+
+        {/* Desktop nav */}
+        <nav className="hidden lg:flex items-center bg-slate-100 p-1 rounded-xl gap-0.5">
+          {TABS.map(t=>(
+            <button key={t.id} onClick={()=>setTab(t.id)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${tab===t.id?'bg-white text-indigo-600 shadow-sm':'text-slate-500 hover:text-slate-700'}`}>
+              <Icon name={t.icon} size={13}/>{t.label}
+            </button>
+          ))}
+        </nav>
+
+        {/* Save button */}
+        <button onClick={saveAll}
+          className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold transition-all flex-shrink-0">
+          <Icon name="save" size={13}/>저장
+        </button>
+
+        {/* Teacher switcher */}
+        <div className="relative flex-shrink-0" ref={tMenuRef}>
+          <button onClick={e=>{e.stopPropagation();setTMenu(!tMenu);}}
+            className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 transition-all">
+            <span className="text-lg leading-none">{curTeacher.emoji}</span>
+            <span className="hidden sm:block text-sm font-semibold text-slate-700 max-w-[80px] truncate">{curTeacher.name}</span>
+            <Icon name="chevron-down" size={13} className="text-slate-400"/>
+          </button>
+          {tMenu && (
+            <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50">
+              <p className="px-4 py-1.5 text-[9px] font-bold text-slate-400 uppercase tracking-wider">선생님 프로필</p>
+              {teachers.map(t=>(
+                <div key={t.id} className={`flex items-center justify-between px-4 py-2.5 hover:bg-slate-50 cursor-pointer transition-colors ${t.id===tid?'bg-indigo-50':''}`}
+                  onClick={()=>{setTid(t.id);setTMenu(false);}}>
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-lg">{t.emoji}</span>
+                    <span className={`text-sm font-semibold ${t.id===tid?'text-indigo-600':'text-slate-700'}`}>{t.name}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {t.id===tid && <Icon name="check" size={13} className="text-indigo-600"/>}
+                    {teachers.length>1 && <button onClick={e=>{e.stopPropagation();delTeacher(t.id);}} className="p-1 hover:text-red-500 text-slate-300 transition-colors"><Icon name="trash-2" size={12}/></button>}
+                  </div>
+                </div>
+              ))}
+              <hr className="my-1.5 border-slate-100"/>
+              <button onClick={()=>{setTMenu(false);openModal('addTeacher');}}
+                className="w-full flex items-center gap-2.5 px-4 py-2.5 hover:bg-slate-50 text-slate-600 text-sm font-medium transition-colors">
+                <Icon name="plus-circle" size={15} className="text-indigo-500"/>선생님 추가
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </header>
+  );
+
+  // Mobile bottom nav
+  const MobileNav = () => (
+    <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-30">
+      <div className="flex items-center justify-around px-1 py-2">
+        {TABS.map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id)}
+            className={`flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl transition-all ${tab===t.id?'text-indigo-600 bg-indigo-50':'text-slate-400'}`}>
+            <Icon name={t.icon} size={19}/>
+            <span className="text-[9px] font-bold">{t.label.split('/')[0]}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
+  // ═════════════════════════════════════════════════════════════
+  // DASHBOARD
+  // ═════════════════════════════════════════════════════════════
+  const Dashboard = () => {
+    const todayL = lessonsOn(dayjs());
+    const completedTotal = lessons.filter(l=>l.status==='completed').length;
+    const pendingHW = homeworks.filter(h=>!h.completed).length;
+
+    return (
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <div className="xl:col-span-2 space-y-6">
+          {/* Stats */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            {[
+              {label:'등록 학생', value:students.length, icon:'users',         bg:'bg-indigo-50',  ic:'text-indigo-500'},
+              {label:'오늘 수업', value:todayL.length,   icon:'clock',         bg:'bg-violet-50',  ic:'text-violet-500'},
+              {label:'완료 수업', value:completedTotal,  icon:'check-circle',  bg:'bg-emerald-50', ic:'text-emerald-500'},
+              {label:'미완 숙제', value:pendingHW,       icon:'alert-circle',  bg:'bg-amber-50',   ic:'text-amber-500'},
+            ].map(s=>(
+              <div key={s.label} className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
+                <div className={`w-8 h-8 ${s.bg} rounded-xl flex items-center justify-center mb-3`}><Icon name={s.icon} size={15} className={s.ic}/></div>
+                <p className="text-2xl font-bold">{s.value}</p>
+                <p className="text-xs text-slate-400 font-medium mt-0.5">{s.label}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Today's lessons */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-bold flex items-center gap-2"><Icon name="sun" size={17} className="text-amber-400"/>오늘의 수업</h2>
+              <span className="text-xs text-slate-400">{dayjs().format('M월 D일 dddd')}</span>
+            </div>
+            {todayL.length===0 ? (
+              <div className="bg-white rounded-2xl border-2 border-dashed border-slate-200 p-10 flex flex-col items-center text-slate-400">
+                <Icon name="coffee" size={34} className="mb-3 opacity-20"/>
+                <p className="font-medium text-sm">오늘 예정된 수업이 없습니다</p>
+                <button onClick={()=>openModal('addLesson',null,{date:dayjs().format('YYYY-MM-DD')})}
+                  className="mt-3 text-xs text-indigo-600 font-bold hover:underline">수업 추가하기</button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {todayL.map(l=>{
+                  const s=getSt(l.studentId), c=col(s);
+                  return (
+                    <div key={l.id} className={`bg-white rounded-2xl p-4 border-l-4 ${c.border} shadow-sm flex items-center gap-4`}>
+                      <Av name={s?.name} col={c}/>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold truncate">{s?.name}</p>
+                        <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5"><Icon name="book" size={11}/>{s?.subject} · {l.time}</p>
+                        {l.memo && <p className="text-xs text-slate-400 mt-0.5 truncate">{l.memo}</p>}
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-2 py-1 rounded-full">{l.sessionCount}회차</span>
+                        {l.status==='completed'
+                          ? <span className="text-[10px] font-bold bg-emerald-100 text-emerald-600 px-2.5 py-1 rounded-full">완료</span>
+                          : <button onClick={()=>doneLesson(l.id)} className="text-[10px] font-bold bg-indigo-600 text-white px-3 py-1 rounded-full hover:bg-indigo-700">완료</button>
+                        }
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Quick actions */}
+          <div className="grid grid-cols-3 gap-4">
+            {[
+              {label:'수업 등록', icon:'calendar-plus', cls:'bg-indigo-600', fn:()=>openModal('addLesson',null,{date:dayjs().format('YYYY-MM-DD')})},
+              {label:'숙제 추가', icon:'file-plus',     cls:'bg-emerald-600',fn:()=>openModal('addHomework')},
+              {label:'학생 등록', icon:'user-plus',     cls:'bg-violet-600', fn:()=>openModal('addStudent')},
+            ].map(qa=>(
+              <button key={qa.label} onClick={qa.fn}
+                className={`${qa.cls} text-white rounded-2xl p-5 text-left hover:opacity-90 transition-all active:scale-95 shadow-sm`}>
+                <Icon name={qa.icon} size={22} className="mb-3 opacity-80"/>
+                <p className="font-bold text-sm">{qa.label}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Sidebar */}
+        <div className="space-y-5">
+          {/* Students */}
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-slate-100 flex justify-between items-center">
+              <p className="font-bold text-sm">학생 현황</p>
+              <button onClick={()=>setTab('students')} className="text-xs text-indigo-600 font-semibold hover:underline">전체보기</button>
+            </div>
+            <div className="divide-y divide-slate-50">
+              {students.slice(0,6).map(s=>{
+                const c=col(s), done=lessons.filter(l=>l.studentId===s.id&&l.status==='completed').length, hw=homeworks.filter(h=>h.studentId===s.id&&!h.completed).length;
+                return (
+                  <div key={s.id} className="px-5 py-3 flex items-center gap-3">
+                    <Av name={s.name} col={c} sz="sm"/>
+                    <div className="flex-1 min-w-0"><p className="text-sm font-semibold truncate">{s.name}</p><p className="text-[10px] text-slate-400 truncate">{s.subject}</p></div>
+                    <div className="flex gap-1.5 text-[10px] font-bold">
+                      <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{done}회</span>
+                      {hw>0&&<span className="bg-amber-100 text-amber-600 px-2 py-0.5 rounded-full">{hw}개</span>}
+                    </div>
+                  </div>
+                );
+              })}
+              {students.length===0&&<p className="px-5 py-8 text-center text-slate-400 text-sm italic">등록된 학생이 없습니다</p>}
+            </div>
+          </div>
+
+          {/* Upcoming */}
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-slate-100 flex justify-between items-center">
+              <p className="font-bold text-sm">다가오는 수업</p>
+              <button onClick={()=>setTab('calendar')} className="text-xs text-indigo-600 font-semibold hover:underline">캘린더</button>
+            </div>
+            <div className="divide-y divide-slate-50">
+              {lessons.filter(l=>dayjs(l.date).isSameOrAfter(dayjs(),'day')&&l.status==='scheduled')
+                .sort((a,b)=>a.date.localeCompare(b.date)).slice(0,5).map(l=>{
+                  const s=getSt(l.studentId), c=col(s), d=dayjs(l.date);
+                  return (
+                    <div key={l.id} className="px-5 py-3 flex items-center gap-3">
+                      <div className={`w-9 h-9 ${c.bg} rounded-xl flex flex-col items-center justify-center flex-shrink-0`}>
+                        <span className={`text-[9px] font-bold ${c.text} leading-none`}>{d.format('M월')}</span>
+                        <span className={`text-sm font-bold ${c.text} leading-none`}>{d.format('D')}</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold truncate">{s?.name}</p>
+                        <p className="text-[10px] text-slate-400">{d.format('ddd')} · {l.time}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              {lessons.filter(l=>dayjs(l.date).isSameOrAfter(dayjs(),'day')&&l.status==='scheduled').length===0&&
+                <p className="px-5 py-6 text-center text-slate-400 text-sm italic">예정된 수업이 없습니다</p>}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ═════════════════════════════════════════════════════════════
+  // CALENDAR
+  // ═════════════════════════════════════════════════════════════
+  const Calendar = () => {
+    const start = month.startOf('month').startOf('week');
+    const end   = month.endOf('month').endOf('week');
+    const days=[]; let d=start;
+    while(d.isSameOrBefore(end)){days.push(d);d=d.add(1,'day');}
+    const selL = lessonsOn(selDate);
+
+    return (
+      <div className="grid grid-cols-1 xl:grid-cols-4 gap-5">
+        <div className="xl:col-span-3 bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <h2 className="text-xl font-bold">{month.format('YYYY년 MM월')}</h2>
+              <div className="flex items-center bg-slate-100 rounded-xl p-0.5 gap-0.5">
+                <button onClick={()=>setMonth(m=>m.subtract(1,'month'))} className="p-1.5 rounded-lg hover:bg-white transition-all"><Icon name="chevron-left" size={15}/></button>
+                <button onClick={()=>setMonth(dayjs())} className="px-2 py-1 text-xs font-bold hover:bg-white rounded-lg transition-all">오늘</button>
+                <button onClick={()=>setMonth(m=>m.add(1,'month'))} className="p-1.5 rounded-lg hover:bg-white transition-all"><Icon name="chevron-right" size={15}/></button>
+              </div>
+            </div>
+            <PriBtn onClick={()=>openModal('addLesson',null,{date:selDate.format('YYYY-MM-DD')})}><Icon name="plus" size={15}/>수업 추가</PriBtn>
+          </div>
+          <div className="cal-grid bg-slate-50 border-b border-slate-100">
+            {['일','월','화','수','목','금','토'].map((x,i)=>(
+              <div key={x} className={`py-2.5 text-center text-[9px] font-bold uppercase tracking-widest ${i===0?'text-red-400':i===6?'text-blue-400':'text-slate-400'}`}>{x}</div>
+            ))}
+          </div>
+          <div className="cal-grid">
+            {days.map((d,i)=>{
+              const dl=lessonsOn(d), inM=d.isSame(month,'month'), isSel=d.isSame(selDate,'day'), isT=d.isToday();
+              return (
+                <div key={i} onClick={()=>setSelDate(d)}
+                  className={`min-h-[90px] p-1.5 border-r border-b border-slate-50 cursor-pointer transition-colors ${!inM?'bg-slate-50/60 opacity-40':'hover:bg-indigo-50/30'} ${isSel?'bg-indigo-50/70':''}`}>
+                  <div className="mb-1">
+                    <span className={`inline-flex w-6 h-6 items-center justify-center text-[11px] font-bold rounded-full ${isT?'bg-indigo-600 text-white':i%7===0?'text-red-400':i%7===6?'text-blue-400':'text-slate-500'}`}>{d.date()}</span>
+                  </div>
+                  <div className="space-y-0.5">
+                    {dl.slice(0,3).map(l=>{
+                      const s=getSt(l.studentId), c=col(s);
+                      return <div key={l.id} className={`px-1.5 py-0.5 rounded text-[8px] font-bold truncate border ${c.bg} ${c.text} ${c.border} ${l.status==='completed'?'opacity-50':''}`}>{s?.name}</div>;
+                    })}
+                    {dl.length>3&&<div className="text-[9px] text-slate-400 pl-1">+{dl.length-3}개</div>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Side panel */}
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden self-start">
+          <div className="px-5 py-4 border-b border-slate-100">
+            <p className="font-bold">{selDate.format('M월 D일 (ddd)')}</p>
+            <p className="text-xs text-slate-400">{selL.length}개의 수업</p>
+          </div>
+          <div className="p-3 space-y-2.5">
+            {selL.length===0?(
+              <div className="text-center py-8 text-slate-400">
+                <Icon name="calendar" size={28} className="mx-auto mb-2 opacity-20"/>
+                <p className="text-sm">일정이 없습니다</p>
+                <button onClick={()=>openModal('addLesson',null,{date:selDate.format('YYYY-MM-DD')})}
+                  className="mt-2 text-xs text-indigo-600 font-bold hover:underline">+ 수업 추가</button>
+              </div>
+            ):selL.map(l=>{
+              const s=getSt(l.studentId), c=col(s);
+              return (
+                <div key={l.id} className="bg-slate-50 rounded-xl p-3.5">
+                  <div className="flex justify-between items-start mb-2">
+                    <div className="flex items-center gap-2">
+                      <Av name={s?.name} col={c} sz="sm"/>
+                      <div><p className="text-sm font-bold">{s?.name}</p><p className="text-[10px] text-slate-400">{s?.subject}</p></div>
+                    </div>
+                    <div className="flex gap-0.5">
+                      <button onClick={()=>openModal('editLesson',l,{...l,sessionCount:String(l.sessionCount)})}
+                        className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-400 hover:text-indigo-600 transition-all"><Icon name="edit-2" size={12}/></button>
+                      <button onClick={()=>delLesson(l.id)} className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-all"><Icon name="trash-2" size={12}/></button>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs text-slate-500 flex items-center gap-1"><Icon name="clock" size={11}/>{l.time}</p>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-bold bg-white border border-slate-200 text-slate-500 px-2 py-0.5 rounded-full">{l.sessionCount}회차</span>
+                      {l.status==='scheduled'
+                        ?<button onClick={()=>doneLesson(l.id)} className="text-[10px] font-bold text-indigo-600 hover:underline">완료처리</button>
+                        :<span className="text-[10px] font-bold text-emerald-600">완료됨</span>}
+                    </div>
+                  </div>
+                  {l.memo&&<p className="text-[11px] text-slate-400 mt-1.5 truncate">{l.memo}</p>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ═════════════════════════════════════════════════════════════
+  // STUDENTS
+  // ═════════════════════════════════════════════════════════════
+  const Students = () => {
+    const [view, setView] = useState('all');
+    const filtered = view==='all'?students:view==='none'?students.filter(s=>!s.classId):students.filter(s=>s.classId===view);
+    const noClass = students.filter(s=>!s.classId);
+
+    return (
+      <div className="space-y-5">
+        {/* Filters */}
+        <div className="flex flex-wrap gap-2 items-center">
+          <button onClick={()=>setView('all')}
+            className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${view==='all'?'bg-indigo-600 text-white':'bg-white border border-slate-200 text-slate-600 hover:border-indigo-300'}`}>
+            전체 ({students.length})
+          </button>
+          {classes.map(c=>(
+            <button key={c.id} onClick={()=>setView(c.id)}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 ${view===c.id?'bg-indigo-600 text-white':'bg-white border border-slate-200 text-slate-600 hover:border-indigo-300'}`}>
+              <span className={`w-2 h-2 rounded-full ${CLASS_SOLID[c.colorIdx||0]} flex-shrink-0`}/>
+              {c.name} ({students.filter(s=>s.classId===c.id).length})
+              <span onClick={e=>{e.stopPropagation();delClass(c.id);}}
+                className="ml-0.5 hover:text-red-500 opacity-60 hover:opacity-100 transition-all cursor-pointer"><Icon name="x" size={12}/></span>
+            </button>
+          ))}
+          {noClass.length>0&&(
+            <button onClick={()=>setView('none')}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${view==='none'?'bg-slate-600 text-white':'bg-white border border-slate-200 text-slate-600'}`}>
+              미분류 ({noClass.length})
+            </button>
+          )}
+          <button onClick={()=>openModal('addClass')}
+            className="px-4 py-2 rounded-xl text-sm font-semibold text-indigo-600 border border-dashed border-indigo-300 hover:bg-indigo-50 flex items-center gap-1.5 transition-all">
+            <Icon name="plus" size={13}/>클래스 추가
+          </button>
+          <PriBtn className="ml-auto" onClick={()=>openModal('addStudent')}>
+            <Icon name="user-plus" size={15}/>학생 등록
+          </PriBtn>
+        </div>
+
+        {/* Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {filtered.map(s=>{
+            const c=col(s), cl=getCl(s.classId);
+            const done=lessons.filter(l=>l.studentId===s.id&&l.status==='completed').length;
+            const sHW=homeworks.filter(h=>h.studentId===s.id), doneHW=sHW.filter(h=>h.completed).length;
+            const sP=progress.filter(p=>p.studentId===s.id), doneP=sP.filter(p=>p.status==='완료').length;
+            return (
+              <div key={s.id} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden hover:shadow-md transition-shadow">
+                <div className={`h-1.5 ${c.solid}`}/>
+                <div className="p-5">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <Av name={s.name} col={c} sz="lg"/>
+                      <div>
+                        <h3 className="font-bold text-slate-900">{s.name}</h3>
+                        <p className="text-xs text-slate-400">{s.subject}</p>
+                        {cl&&<span className={`mt-1.5 inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${CLASS_SOLID[cl.colorIdx||0]} text-white`}>{cl.name}</span>}
+                      </div>
+                    </div>
+                    <div className="flex gap-0.5">
+                      <button onClick={()=>openModal('editStudent',s,{name:s.name,subject:s.subject,classId:s.classId||''})}
+                        className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-indigo-600 transition-all"><Icon name="edit-2" size={14}/></button>
+                      <button onClick={()=>delStudent(s.id)}
+                        className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-all"><Icon name="trash-2" size={14}/></button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 mb-4">
+                    {[
+                      {l:'완료 수업', v:done,                icon:'check-circle', ic:'text-emerald-500'},
+                      {l:'미완 숙제', v:sHW.length-doneHW,  icon:'file-text',    ic:'text-amber-500'},
+                      {l:'진도',      v:`${doneP}/${sP.length}`, icon:'bar-chart-2', ic:'text-indigo-500'},
+                    ].map(st=>(
+                      <div key={st.l} className="bg-slate-50 rounded-xl p-2.5 text-center">
+                        <Icon name={st.icon} size={13} className={`mx-auto mb-1 ${st.ic}`}/>
+                        <p className="text-sm font-bold">{st.v}</p>
+                        <p className="text-[9px] text-slate-400">{st.l}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={()=>{setMsgSid(s.id);setTab('messages');}}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-semibold transition-all">
+                      <Icon name="message-circle" size={13}/>메시지
+                    </button>
+                    <button onClick={()=>openModal('shareHW',s)}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-600 text-xs font-semibold transition-all">
+                      <Icon name="share-2" size={13}/>숙제공유
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          {filtered.length===0&&(
+            <div className="col-span-full py-16 text-center text-slate-400 border-2 border-dashed border-slate-200 rounded-2xl">
+              <Icon name="users" size={38} className="mx-auto mb-3 opacity-20"/>
+              <p className="font-medium">등록된 학생이 없습니다</p>
+              <button onClick={()=>openModal('addStudent')} className="mt-2 text-sm text-indigo-600 font-bold hover:underline">학생 등록하기</button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // ═════════════════════════════════════════════════════════════
+  // HOMEWORK
+  // ═════════════════════════════════════════════════════════════
+  const Homework = () => {
+    const [statusF, setStatusF] = useState('all');
+    const [stF, setStF] = useState('all');
+
+    const filtered = homeworks
+      .filter(h=>stF==='all'||h.studentId===stF)
+      .filter(h=>statusF==='all'||(statusF==='done'?h.completed:!h.completed));
+
+    const done=homeworks.filter(h=>h.completed).length, total=homeworks.length;
+
+    return (
+      <div className="space-y-5">
+        <div className="flex flex-wrap items-center gap-3 justify-between">
+          <div>
+            <h2 className="font-bold">숙제 관리</h2>
+            <p className="text-xs text-slate-400 mt-0.5">{done}/{total} 완료 · {Math.round(total?done/total*100:0)}%</p>
+          </div>
+          <PriBtn onClick={()=>openModal('addHomework')}><Icon name="plus" size={15}/>숙제 추가</PriBtn>
+        </div>
+
+        {/* Progress bar */}
+        <div className="bg-white rounded-2xl p-4 border border-slate-100">
+          <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+            <div className="h-full bg-indigo-500 rounded-full transition-all" style={{width:`${total?done/total*100:0}%`}}/>
+          </div>
+        </div>
+
+        {/* Filters */}
+        <div className="flex flex-wrap gap-2">
+          <div className="flex bg-slate-100 p-1 rounded-xl gap-0.5">
+            {[['all','전체'],['pending','미완료'],['done','완료']].map(([v,l])=>(
+              <button key={v} onClick={()=>setStatusF(v)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${statusF===v?'bg-white text-indigo-600 shadow-sm':'text-slate-500'}`}>{l}</button>
+            ))}
+          </div>
+          <div className="flex bg-slate-100 p-1 rounded-xl gap-0.5 overflow-x-auto max-w-full">
+            <button onClick={()=>setStF('all')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${stF==='all'?'bg-white text-indigo-600 shadow-sm':'text-slate-500'}`}>전체</button>
+            {students.map(s=>(
+              <button key={s.id} onClick={()=>setStF(s.id)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${stF===s.id?'bg-white text-indigo-600 shadow-sm':'text-slate-500'}`}>{s.name}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* List */}
+        <div className="space-y-2">
+          {filtered.length===0?(
+            <div className="py-14 text-center text-slate-400 border-2 border-dashed border-slate-200 rounded-2xl">
+              <Icon name="check-circle" size={36} className="mx-auto mb-3 opacity-20"/>
+              <p className="font-medium text-sm">{statusF==='done'?'완료된 숙제가 없습니다':'숙제가 없습니다 🎉'}</p>
+            </div>
+          ):filtered.map(hw=>{
+            const s=getSt(hw.studentId), c=col(s);
+            return (
+              <div key={hw.id} className={`bg-white rounded-2xl px-4 py-3.5 border border-slate-100 flex items-center gap-4 group hover:shadow-sm transition-all ${hw.completed?'opacity-60':''}`}>
+                <button onClick={()=>toggleHW(hw.id)}
+                  className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${hw.completed?'bg-indigo-600 border-indigo-600':'border-slate-300 hover:border-indigo-400'}`}>
+                  {hw.completed&&<Icon name="check" size={12} className="text-white"/>}
+                </button>
+                <Av name={s?.name} col={c} sz="sm"/>
+                <div className="flex-1 min-w-0">
+                  <p className={`text-sm font-semibold ${hw.completed?'line-through text-slate-400':'text-slate-800'}`}>{hw.task}</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">{s?.name} · {s?.subject} · {hw.dueDate}</p>
+                </div>
+                <button onClick={()=>delHW(hw.id)}
+                  className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg hover:bg-red-50 text-slate-300 hover:text-red-500 transition-all">
+                  <Icon name="trash-2" size={13}/>
+                </button>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Per-student cards */}
+        {students.length>0&&(
+          <div>
+            <h3 className="font-bold text-xs text-slate-400 uppercase tracking-wide mb-4">학생별 숙제</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {students.map(s=>{
+                const c=col(s), sHW=homeworks.filter(h=>h.studentId===s.id), d=sHW.filter(h=>h.completed).length;
+                return (
+                  <div key={s.id} className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
+                    <div className={`${c.bg} px-4 py-3 border-b ${c.border} flex items-center justify-between`}>
+                      <div className="flex items-center gap-2">
+                        <Av name={s.name} col={c} sz="sm"/>
+                        <div>
+                          <p className={`text-sm font-bold ${c.text}`}>{s.name}</p>
+                          <p className={`text-[10px] ${c.text} opacity-70`}>{d}/{sHW.length} 완료</p>
+                        </div>
+                      </div>
+                      <button onClick={()=>openModal('shareHW',s)} className={`p-1.5 rounded-lg ${c.text} opacity-60 hover:opacity-100 hover:bg-white/50 transition-all`}>
+                        <Icon name="share-2" size={13}/>
+                      </button>
+                    </div>
+                    <div className="p-3 space-y-1">
+                      {sHW.length===0?<p className="text-xs text-slate-400 text-center py-4">숙제 없음</p>
+                       :sHW.map(hw=>(
+                        <div key={hw.id} className="flex items-center gap-2.5 p-2 hover:bg-slate-50 rounded-xl group/i transition-all">
+                          <button onClick={()=>toggleHW(hw.id)}
+                            className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${hw.completed?'bg-emerald-500 border-emerald-500':'border-slate-300 hover:border-emerald-400'}`}>
+                            {hw.completed&&<Icon name="check" size={10} className="text-white"/>}
+                          </button>
+                          <span className={`text-xs font-medium flex-1 ${hw.completed?'line-through text-slate-400':'text-slate-700'}`}>{hw.task}</span>
+                          <button onClick={()=>delHW(hw.id)} className="opacity-0 group-hover/i:opacity-100 text-slate-300 hover:text-red-500 transition-all"><Icon name="x" size={12}/></button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // ═════════════════════════════════════════════════════════════
+  // PROGRESS
+  // ═════════════════════════════════════════════════════════════
+  const Progress = () => {
+    const [stF, setStF] = useState('all');
+
+    return (
+      <div className="space-y-5">
+        <div className="flex flex-wrap items-center gap-3 justify-between">
+          <h2 className="font-bold">진도표</h2>
+          <PriBtn onClick={()=>openModal('addProgress')}><Icon name="plus" size={15}/>진도 추가</PriBtn>
+        </div>
+
+        {/* Student filter */}
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          <button onClick={()=>setStF('all')}
+            className={`px-4 py-2 rounded-xl text-sm font-semibold whitespace-nowrap flex-shrink-0 transition-all ${stF==='all'?'bg-indigo-600 text-white':'bg-white border border-slate-200 text-slate-600'}`}>전체</button>
+          {students.map(s=>{
+            const c=col(s);
+            return (
+              <button key={s.id} onClick={()=>setStF(s.id)}
+                className={`px-4 py-2 rounded-xl text-sm font-semibold whitespace-nowrap flex-shrink-0 flex items-center gap-2 transition-all ${stF===s.id?'bg-indigo-600 text-white':'bg-white border border-slate-200 text-slate-600'}`}>
+                <span className={`w-2 h-2 rounded-full ${c.solid} flex-shrink-0`}/>{s.name}
+              </button>
+            );
+          })}
+        </div>
+
+        {progress.length===0?(
+          <div className="py-16 text-center text-slate-400 border-2 border-dashed border-slate-200 rounded-2xl">
+            <Icon name="bar-chart-2" size={38} className="mx-auto mb-3 opacity-20"/>
+            <p className="font-medium">등록된 진도 항목이 없습니다</p>
+          </div>
+        ):(
+          <div className="space-y-5">
+            {students.map(s=>{
+              const c=col(s), sP=(stF==='all'||stF===s.id)?progress.filter(p=>p.studentId===s.id):[];
+              if (sP.length===0) return null;
+              const done=sP.filter(p=>p.status==='완료').length, pct=sP.length?done/sP.length:0;
+              return (
+                <div key={s.id} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                  <div className={`${c.bg} border-b ${c.border} px-5 py-4 flex items-center justify-between`}>
+                    <div className="flex items-center gap-3">
+                      <Av name={s.name} col={c} sz="sm"/>
+                      <div><p className={`font-bold text-sm ${c.text}`}>{s.name}</p><p className={`text-[10px] ${c.text} opacity-70`}>{s.subject}</p></div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className={`font-bold text-sm ${c.text}`}>{done}/{sP.length}</span>
+                      <div className="w-20 h-1.5 bg-white/60 rounded-full overflow-hidden">
+                        <div className={`h-full ${c.solid} rounded-full`} style={{width:`${pct*100}%`}}/>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="divide-y divide-slate-50">
+                    {sP.map(item=>{
+                      const cfg=STATUS_CFG[item.status];
+                      return (
+                        <div key={item.id} className="px-5 py-3.5 flex items-center justify-between gap-4 hover:bg-slate-50/50 transition-colors group">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold truncate">{item.unit}</p>
+                            {item.memo&&<p className="text-xs text-slate-400 mt-0.5 truncate">{item.memo}</p>}
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <div className="flex gap-1">
+                              {['미시작','진행중','완료'].map(st=>(
+                                <button key={st} onClick={()=>setProgStatus(item.id,st)}
+                                  className={`text-[10px] font-bold px-2.5 py-1 rounded-full transition-all ${item.status===st?`${STATUS_CFG[st].bg} ${STATUS_CFG[st].text}`:'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}>{st}</button>
+                              ))}
+                            </div>
+                            <button onClick={()=>delProgress(item.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded-lg hover:bg-red-50 text-slate-300 hover:text-red-500 transition-all"><Icon name="trash-2" size={13}/></button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // ═════════════════════════════════════════════════════════════
+  // MESSAGES
+  // ═════════════════════════════════════════════════════════════
+  const Messages = () => {
+    const [input, setInput] = useState('');
+    const endRef = useRef(null);
+    const selId = msgSid||students[0]?.id;
+    const selSt = getSt(selId);
+    const c = col(selSt);
+    const msgs = messages[selId]||[];
+
+    useEffect(()=>endRef.current?.scrollIntoView({behavior:'smooth'}),[msgs.length]);
+
+    const send = txt => {
+      const t = txt||input;
+      if (!t.trim()||!selId) return;
+      sendMsg(selId, t.trim());
+      setInput('');
+    };
+
+    if (students.length===0) return (
+      <div className="flex items-center justify-center py-24 text-slate-400">
+        <div className="text-center">
+          <Icon name="message-circle" size={44} className="mx-auto mb-4 opacity-20"/>
+          <p className="font-medium">학생을 먼저 등록해주세요</p>
+          <button onClick={()=>openModal('addStudent')} className="mt-2 text-sm text-indigo-600 font-bold hover:underline">학생 등록하기</button>
+        </div>
+      </div>
+    );
+
+    return (
+      <div className="flex gap-5" style={{height:'calc(100vh - 10rem)'}}>
+        {/* Student list */}
+        <div className="w-52 flex-shrink-0 bg-white rounded-2xl border border-slate-100 overflow-hidden flex flex-col hidden sm:flex">
+          <div className="px-4 py-3 border-b border-slate-100"><p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">학생 목록</p></div>
+          <div className="overflow-y-auto flex-1">
+            {students.map(s=>{
+              const sc=col(s), isSel=selId===s.id, msgCnt=(messages[s.id]||[]).length;
+              return (
+                <button key={s.id} onClick={()=>setMsgSid(s.id)}
+                  className={`w-full flex items-center gap-2.5 px-4 py-3 transition-colors text-left ${isSel?'bg-indigo-50':'hover:bg-slate-50'}`}>
+                  <Av name={s.name} col={sc} sz="sm"/>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-sm font-semibold truncate ${isSel?'text-indigo-600':'text-slate-700'}`}>{s.name}</p>
+                    <p className="text-[10px] text-slate-400 truncate">{s.subject}</p>
+                  </div>
+                  {msgCnt>0&&<span className="text-[9px] font-bold bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded-full">{msgCnt}</span>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Chat */}
+        <div className="flex-1 bg-white rounded-2xl border border-slate-100 flex flex-col overflow-hidden">
+          {selSt&&(
+            <div className={`${c.bg} px-5 py-3.5 border-b ${c.border} flex items-center gap-3 flex-shrink-0`}>
+              <Av name={selSt.name} col={c} sz="sm"/>
+              <div>
+                <p className={`font-bold text-sm ${c.text}`}>{selSt.name} 학부모님</p>
+                <p className={`text-[10px] ${c.text} opacity-70`}>{selSt.subject} 수업 대화방</p>
+              </div>
+              {/* Mobile student switcher */}
+              <div className="sm:hidden ml-auto flex gap-1 overflow-x-auto">
+                {students.map(s=>(
+                  <button key={s.id} onClick={()=>setMsgSid(s.id)}
+                    className={`px-2.5 py-1 rounded-full text-[10px] font-bold whitespace-nowrap transition-all ${selId===s.id?'bg-indigo-600 text-white':'bg-white/60 text-slate-600'}`}>{s.name}</button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto p-5 space-y-4">
+            {msgs.length===0?(
+              <div className="flex h-full items-center justify-center text-slate-400">
+                <div className="text-center"><Icon name="message-circle" size={34} className="mx-auto mb-3 opacity-20"/><p className="text-sm">첫 메시지를 보내보세요 💬</p></div>
+              </div>
+            ):msgs.map(msg=>(
+              <div key={msg.id} className={`flex gap-2.5 ${msg.from==='tutor'?'flex-row-reverse':'flex-row'}`}>
+                <div className={`w-8 h-8 rounded-2xl flex items-center justify-center text-sm font-bold flex-shrink-0 ${msg.from==='tutor'?'bg-indigo-100 text-indigo-600':`${c.bg} ${c.text}`}`}>
+                  {msg.from==='tutor'?curTeacher.emoji:selSt?.name?.[0]}
+                </div>
+                <div className={`group max-w-xs flex flex-col ${msg.from==='tutor'?'items-end':'items-start'}`}>
+                  <div className={`px-4 py-2.5 rounded-2xl text-sm font-medium leading-relaxed ${msg.from==='tutor'?'bg-indigo-600 text-white rounded-tr-sm':'bg-slate-100 text-slate-700 rounded-tl-sm'}`}>
+                    {msg.text}
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1 px-1 flex items-center gap-2">
+                    {msg.time}
+                    {msg.from==='tutor'&&<button onClick={()=>delMsg(selId,msg.id)} className="opacity-0 group-hover:opacity-100 hover:text-red-400 transition-all"><Icon name="trash-2" size={10}/></button>}
+                  </p>
+                </div>
+              </div>
+            ))}
+            <div ref={endRef}/>
+          </div>
+
+          {/* Quick messages */}
+          <div className="px-4 py-2 border-t border-slate-100 flex gap-2 overflow-x-auto flex-shrink-0">
+            {QUICK_MSGS.map((q,i)=>(
+              <button key={i} onClick={()=>send(q)}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 rounded-full text-xs font-medium whitespace-nowrap transition-all flex-shrink-0">{q}</button>
+            ))}
+          </div>
+
+          {/* Input */}
+          <div className="px-4 py-3 border-t border-slate-100 flex items-end gap-2 flex-shrink-0">
+            <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&send()}
+              placeholder="메시지를 입력하세요..."
+              className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all bg-slate-50"/>
+            <button onClick={()=>send()} disabled={!input.trim()}
+              className="w-10 h-10 bg-indigo-600 disabled:bg-slate-200 text-white rounded-xl flex items-center justify-center transition-all hover:bg-indigo-700 active:scale-95">
+              <Icon name="send" size={15}/>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ═════════════════════════════════════════════════════════════
+  // MODALS
+  // ═════════════════════════════════════════════════════════════
+  const Modals = () => (
+    <>
+      {/* Add Student */}
+      <Modal open={modal==='addStudent'} onClose={closeModal} title="학생 등록"
+        footer={<PriBtn className="w-full justify-center" onClick={addStudent} disabled={!f.name?.trim()||!f.subject?.trim()}>저장하기</PriBtn>}>
+        <Fld label="이름"><Inp value={f.name||''} onChange={e=>upd({name:e.target.value})} placeholder="예: 김민수" autoFocus/></Fld>
+        <Fld label="과목"><Inp value={f.subject||''} onChange={e=>upd({subject:e.target.value})} placeholder="예: 고등 수학 (상)"/></Fld>
+        <Fld label="클래스 (선택)">
+          <Sel value={f.classId||''} onChange={e=>upd({classId:e.target.value})}>
+            <option value="">클래스 없음</option>
+            {classes.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+          </Sel>
+        </Fld>
+      </Modal>
+
+      {/* Edit Student */}
+      <Modal open={modal==='editStudent'} onClose={closeModal} title="학생 정보 수정"
+        footer={<PriBtn className="w-full justify-center" onClick={editStudent} disabled={!f.name?.trim()||!f.subject?.trim()}>저장하기</PriBtn>}>
+        <Fld label="이름"><Inp value={f.name||''} onChange={e=>upd({name:e.target.value})} autoFocus/></Fld>
+        <Fld label="과목"><Inp value={f.subject||''} onChange={e=>upd({subject:e.target.value})}/></Fld>
+        <Fld label="클래스">
+          <Sel value={f.classId||''} onChange={e=>upd({classId:e.target.value})}>
+            <option value="">클래스 없음</option>
+            {classes.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+          </Sel>
+        </Fld>
+      </Modal>
+
+      {/* Add Class */}
+      <Modal open={modal==='addClass'} onClose={closeModal} title="클래스 추가"
+        footer={<PriBtn className="w-full justify-center" onClick={addClass} disabled={!f.name?.trim()}>추가하기</PriBtn>}>
+        <Fld label="클래스 이름"><Inp value={f.name||''} onChange={e=>upd({name:e.target.value})} placeholder="예: 중등반, 고등 수학반" autoFocus/></Fld>
+      </Modal>
+
+      {/* Add Lesson */}
+      <Modal open={modal==='addLesson'} onClose={closeModal} title="수업 추가"
+        footer={<PriBtn className="w-full justify-center" onClick={addLesson} disabled={!f.studentId}>저장하기</PriBtn>}>
+        <Fld label="학생">
+          <Sel value={f.studentId||''} onChange={e=>upd({studentId:e.target.value})}>
+            <option value="">학생 선택</option>
+            {students.map(s=><option key={s.id} value={s.id}>{s.name} ({s.subject})</option>)}
+          </Sel>
+        </Fld>
+        <Fld label="날짜"><Inp type="date" value={f.date||selDate.format('YYYY-MM-DD')} onChange={e=>upd({date:e.target.value})}/></Fld>
+        <div className="grid grid-cols-2 gap-3">
+          <Fld label="시간"><Inp value={f.time||'16:00 - 17:30'} onChange={e=>upd({time:e.target.value})} placeholder="16:00 - 17:30"/></Fld>
+          <Fld label="회차 (비우면 자동)"><Inp type="number" min="1" value={f.sessionCount||''} onChange={e=>upd({sessionCount:e.target.value})} placeholder="자동"/></Fld>
+        </div>
+        <Fld label="메모 (선택)"><Inp value={f.memo||''} onChange={e=>upd({memo:e.target.value})} placeholder="수업 메모"/></Fld>
+      </Modal>
+
+      {/* Edit Lesson */}
+      <Modal open={modal==='editLesson'} onClose={closeModal} title="수업 수정"
+        footer={<PriBtn className="w-full justify-center" onClick={editLesson}>저장하기</PriBtn>}>
+        <Fld label="학생">
+          <Sel value={f.studentId||''} onChange={e=>upd({studentId:e.target.value})}>
+            <option value="">학생 선택</option>
+            {students.map(s=><option key={s.id} value={s.id}>{s.name} ({s.subject})</option>)}
+          </Sel>
+        </Fld>
+        <Fld label="날짜"><Inp type="date" value={f.date||''} onChange={e=>upd({date:e.target.value})}/></Fld>
+        <div className="grid grid-cols-2 gap-3">
+          <Fld label="시간"><Inp value={f.time||''} onChange={e=>upd({time:e.target.value})}/></Fld>
+          <Fld label="회차"><Inp type="number" min="1" value={f.sessionCount||''} onChange={e=>upd({sessionCount:e.target.value})}/></Fld>
+        </div>
+        <Fld label="메모"><Inp value={f.memo||''} onChange={e=>upd({memo:e.target.value})}/></Fld>
+      </Modal>
+
+      {/* Add Homework */}
+      <Modal open={modal==='addHomework'} onClose={closeModal} title="숙제 추가"
+        footer={<PriBtn className="w-full justify-center" onClick={addHomework} disabled={!f.studentId||!f.task?.trim()}>추가하기</PriBtn>}>
+        <Fld label="학생">
+          <Sel value={f.studentId||''} onChange={e=>upd({studentId:e.target.value})}>
+            <option value="">학생 선택</option>
+            {students.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+          </Sel>
+        </Fld>
+        <Fld label="숙제 내용"><Txta value={f.task||''} onChange={e=>upd({task:e.target.value})} placeholder="예: 수학 익힘책 10-15p 풀기" rows={3}/></Fld>
+        <Fld label="기한"><Inp type="date" value={f.dueDate||dayjs().format('YYYY-MM-DD')} onChange={e=>upd({dueDate:e.target.value})}/></Fld>
+      </Modal>
+
+      {/* Add Progress */}
+      <Modal open={modal==='addProgress'} onClose={closeModal} title="진도 추가"
+        footer={<PriBtn className="w-full justify-center" onClick={addProgress} disabled={!f.studentId||!f.unit?.trim()}>추가하기</PriBtn>}>
+        <Fld label="학생">
+          <Sel value={f.studentId||''} onChange={e=>upd({studentId:e.target.value})}>
+            <option value="">학생 선택</option>
+            {students.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+          </Sel>
+        </Fld>
+        <Fld label="단원명"><Inp value={f.unit||''} onChange={e=>upd({unit:e.target.value})} placeholder="예: 1단원: 이차방정식"/></Fld>
+        <Fld label="메모 (선택)"><Inp value={f.memo||''} onChange={e=>upd({memo:e.target.value})} placeholder="진도 메모"/></Fld>
+        <Fld label="초기 상태">
+          <div className="flex gap-2">
+            {['미시작','진행중','완료'].map(st=>{
+              const cfg=STATUS_CFG[st];
+              return (
+                <button key={st} onClick={()=>upd({status:st})}
+                  className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${f.status===st?`${cfg.bg} ${cfg.text} ring-2 ring-offset-1 ring-indigo-400`:'bg-slate-100 text-slate-500'}`}>{st}</button>
+              );
+            })}
+          </div>
+        </Fld>
+      </Modal>
+
+      {/* Add Teacher */}
+      <Modal open={modal==='addTeacher'} onClose={closeModal} title="선생님 추가"
+        footer={<PriBtn className="w-full justify-center" onClick={addTeacher} disabled={!f.name?.trim()}>추가하기</PriBtn>}>
+        <Fld label="이름"><Inp value={f.name||''} onChange={e=>upd({name:e.target.value})} placeholder="예: 김선생님" autoFocus/></Fld>
+        <Fld label="이모지">
+          <div className="flex gap-2 flex-wrap">
+            {T_EMOJIS.map(e=>(
+              <button key={e} onClick={()=>upd({emoji:e})}
+                className={`w-11 h-11 text-2xl rounded-xl transition-all ${f.emoji===e?'bg-indigo-100 ring-2 ring-indigo-400':'bg-slate-100 hover:bg-slate-200'}`}>{e}</button>
+            ))}
+          </div>
+        </Fld>
+      </Modal>
+
+      {/* Share Homework */}
+      <Modal open={modal==='shareHW'} onClose={closeModal} title="숙제 공유">
+        {editTarget&&(
+          <div className="text-center space-y-4">
+            <div className="w-16 h-16 mx-auto bg-indigo-50 rounded-2xl flex items-center justify-center"><Icon name="share-2" size={28} className="text-indigo-500"/></div>
+            <div>
+              <p className="font-bold text-slate-800">{editTarget.name} 학생 숙제</p>
+              <p className="text-sm text-slate-500 mt-1">아래 링크를 학부모님께 공유하세요</p>
+            </div>
+            <div className="bg-slate-50 rounded-xl p-3 border border-slate-200 text-left">
+              <p className="text-xs text-slate-500 break-all font-mono">{shareLink(editTarget.id)}</p>
+            </div>
+            <button onClick={()=>navigator.clipboard.writeText(shareLink(editTarget.id)).then(()=>alert('링크가 복사되었습니다!'))}
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all">
+              <Icon name="copy" size={15}/>링크 복사
+            </button>
+            <p className="text-[11px] text-slate-400">※ 동일 기기·브라우저에서만 데이터가 보입니다</p>
+          </div>
+        )}
+      </Modal>
+    </>
+  );
+
+  // ═════════════════════════════════════════════════════════════
+  // RENDER
+  // ═════════════════════════════════════════════════════════════
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <Header/>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 pb-24 lg:pb-8">
+        {tab==='dashboard' && <Dashboard/>}
+        {tab==='calendar'  && <Calendar/>}
+        {tab==='students'  && <Students/>}
+        {tab==='homework'  && <Homework/>}
+        {tab==='progress'  && <Progress/>}
+        {tab==='messages'  && <Messages/>}
+      </main>
+      <MobileNav/>
+      <Modals/>
+
+      {/* Toast notification */}
+      {toast && (
+        <div className={`fixed bottom-24 lg:bottom-6 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-2 px-5 py-3 rounded-2xl shadow-xl text-sm font-semibold text-white transition-all
+          ${toast.type==='success' ? 'bg-emerald-500' : 'bg-red-500'}`}>
+          <Icon name={toast.type==='success' ? 'check-circle' : 'alert-circle'} size={15} className="text-white"/>
+          {toast.msg}
+        </div>
+      )}
+
+      {/* Mobile save FAB */}
+      <button onClick={saveAll}
+        className="sm:hidden fixed bottom-20 right-4 z-40 w-11 h-11 bg-emerald-500 hover:bg-emerald-600 text-white rounded-full shadow-lg flex items-center justify-center transition-all active:scale-95">
+        <Icon name="save" size={17}/>
+      </button>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
