@@ -97,9 +97,38 @@ const Modal = ({ open, onClose, title, children, footer, wide }) => {
 const Fld = ({ label, children }) => (
   <div><p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">{label}</p>{children}</div>
 );
-const Inp = (props) => <input {...props} className={`w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-sm text-slate-900 placeholder:text-slate-400 transition-all ${props.className||''}`}/>;
+// Korean IME-safe input: local display state during composition, syncs to parent after
+const Inp = ({ value='', onChange, ...props }) => {
+  const composing = useRef(false);
+  const [display, setDisplay] = useState(value);
+  useEffect(() => { if (!composing.current) setDisplay(value); }, [value]);
+  return (
+    <input
+      {...props}
+      value={display}
+      onChange={e => { setDisplay(e.target.value); if (!composing.current) onChange?.(e); }}
+      onCompositionStart={() => { composing.current = true; }}
+      onCompositionEnd={e => { composing.current = false; setDisplay(e.target.value); onChange?.(e); }}
+      className={`w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-sm text-slate-900 placeholder:text-slate-400 transition-all ${props.className||''}`}
+    />
+  );
+};
 const Sel = (props) => <select {...props} className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-sm text-slate-900 transition-all"/>;
-const Txta = (props) => <textarea {...props} className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-sm text-slate-900 resize-none transition-all"/>;
+const Txta = ({ value='', onChange, ...props }) => {
+  const composing = useRef(false);
+  const [display, setDisplay] = useState(value);
+  useEffect(() => { if (!composing.current) setDisplay(value); }, [value]);
+  return (
+    <textarea
+      {...props}
+      value={display}
+      onChange={e => { setDisplay(e.target.value); if (!composing.current) onChange?.(e); }}
+      onCompositionStart={() => { composing.current = true; }}
+      onCompositionEnd={e => { composing.current = false; setDisplay(e.target.value); onChange?.(e); }}
+      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-sm text-slate-900 resize-none transition-all"
+    />
+  );
+};
 const PriBtn = ({ children, disabled, className='', ...p }) => (
   <button {...p} disabled={disabled} className={`bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl font-semibold text-sm flex items-center gap-2 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed ${className}`}>{children}</button>
 );
